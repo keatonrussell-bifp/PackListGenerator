@@ -6,7 +6,7 @@ import pdfplumber
 import re
 import math
 
-# ---------------- REGEX AND HELPERS (unchanged) ----------------
+# ---------------- REGEX AND HELPERS ----------------
 
 TRANSPORT_RX = re.compile(r"Transport\s*:\s*([A-Z0-9]+)")
 SECTION_GRADE_RX = re.compile(
@@ -48,6 +48,7 @@ def frac_to_float(s: str) -> float:
         return float(num) / float(den)
     return float(s)
 
+
 def parse_footer_totals(full_text: str):
     pcs_vals = [m.group(1) for m in PCS_RX.finditer(full_text)]
     mbf_vals = [m.group(1) for m in MBF_RX.finditer(full_text)]
@@ -69,6 +70,7 @@ def parse_pdf_from_bytes(pdf_bytes, name="PDF"):
 
     full_text = "\n".join(pages)
     expected  = parse_footer_totals(full_text)
+
     transport = None
     items = []
     cur_grade = None
@@ -144,9 +146,13 @@ def parse_pdf_from_bytes(pdf_bytes, name="PDF"):
 # ---------------- STREAMLIT UI ----------------
 
 st.title("HSTP Packlist → Dimension Summary")
-st.write("Upload one or more packing list PDFs below.")
+st.write("Upload packing list PDFs to generate a consolidated Excel summary.")
 
-uploaded_files = st.file_uploader("Choose PDF files", type=["pdf"], accept_multiple_files=True)
+uploaded_files = st.file_uploader(
+    "Choose PDF files",
+    type=["pdf"],
+    accept_multiple_files=True
+)
 
 if uploaded_files:
     summaries = []
@@ -162,7 +168,7 @@ if uploaded_files:
         else:
             log_output += f"⚠ No data found in {f.name}\n"
 
-    st.text_area("Log", log_output, height=200)
+    st.text_area("Log Output", log_output, height=250)
 
     if summaries:
         combined = pd.concat(summaries, ignore_index=True)
@@ -182,9 +188,16 @@ if uploaded_files:
             pivot.to_excel(writer, sheet_name="All Containers")
         output.seek(0)
 
+        # --- User-defined filename ---
+        output_name = st.text_input(
+            "Output Excel filename:",
+            value="_packlist.xlsx",
+            help="Enter the filename for the generated Excel summary."
+        )
+
         st.download_button(
             "Download Excel Summary",
             data=output,
-            file_name="HSTP_All.xlsx",
+            file_name=output_name if output_name.strip() else "HSTP_All.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )

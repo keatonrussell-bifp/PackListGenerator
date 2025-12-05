@@ -1,0 +1,6 @@
+streamlit
+pdfplumber
+pandas
+xlsxwriter
+PyPDF2
+numpy

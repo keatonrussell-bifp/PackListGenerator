@@ -148,6 +148,13 @@ def parse_pdf_from_bytes(pdf_bytes, name="PDF"):
 st.title("HSTP Packlist → Dimension Summary")
 st.write("Upload packing list PDFs to generate a consolidated Excel summary.")
 
+# ✅ NEW: booking number input
+booking_number = st.text_input(
+    "Booking Number (optional):",
+    value="",
+    help="If provided, it will be appended as the last column in the Excel output."
+)
+
 uploaded_files = st.file_uploader(
     "Choose PDF files",
     type=["pdf"],
@@ -183,12 +190,17 @@ if uploaded_files:
 
         pivot = pivot.replace(0, "")
 
+        # ✅ NEW: append booking number as the last column (after pivot columns)
+        pivot[("Booking Number", "")] = booking_number.strip() if booking_number.strip() else ""
+
+        # Make sure it's literally the last column
+        pivot = pivot.reindex(columns=[c for c in pivot.columns if c != ("Booking Number", "")] + [("Booking Number", "")])
+
         output = io.BytesIO()
         with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
             pivot.to_excel(writer, sheet_name="All Containers")
         output.seek(0)
 
-        # --- User-defined filename ---
         output_name = st.text_input(
             "Output Excel filename:",
             value="_packlist.xlsx",

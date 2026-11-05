@@ -21,6 +21,15 @@ ROW_RX_IMPERIAL = re.compile(
     r'(?P<mbf>\d+[,\.]\d+)\s*mbf',
     re.IGNORECASE
 )
+# HSTP package rows contain volume and package number, but no piece count.
+ROW_RX_HSTP = re.compile(
+    r'^\s*(?P<thick>\d+(?:[,.]\d+)?)"\s+'
+    r'(?P<width>\d+(?:[,.]\d+)?)"\s+'
+    r'(?P<length>\d+(?:\s+\d+/\d+)?|\d+/\d+)"\s+'
+    r'(?P<cbm>\d+[,.]\d+)\s*cbm\s+'
+    r'(?P<mbf>\d+[,.]\d+)\s*mbf\s+'
+    r'(?P<package>\d+)\s*$', re.IGNORECASE
+)
 ROW_RX_METRIC = re.compile(
     r'(?P<thick_mm>\d+[,\.\d]*)\s*mm\s+'
     r'(?P<width_mm>\d+[,\.\d]*)\s*mm\s+'
@@ -87,6 +96,19 @@ def parse_pdf_from_bytes(pdf_bytes, name="PDF"):
             if g:
                 cur_grade = g.group(1).strip().upper()
 
+            hstp = ROW_RX_HSTP.search(ln)
+            if hstp:
+                items.append({
+                    "Transport": transport or name,
+                    "Thickness (in)": float(hstp.group("thick").replace(",", ".")),
+                    "Width (in)": float(hstp.group("width").replace(",", ".")),
+                    "Length (in)": frac_to_float(hstp.group("length")),
+                    "Quantity (pcs)": None,  # Not provided for individual packages.
+                    "Volume (mbf)": float(hstp.group("mbf").replace(",", ".")),
+                    "Grade": cur_grade or "UNKNOWN",
+                })
+                continue
+
             mi = ROW_RX_IMPERIAL.search(ln)
             if mi:
                 items.append({
@@ -136,7 +158,7 @@ def parse_pdf_from_bytes(pdf_bytes, name="PDF"):
 
     actual = {
         "pkgs": int(df.shape[0]),
-        "pcs":  int(df["Quantity (pcs)"].sum()),
+        "pcs":  int(df["Quantity (pcs)"].sum()) if df["Quantity (pcs)"].notna().all() else None,
         "mbf":  float(df["Volume (mbf)"].sum(skipna=True)) if df["Volume (mbf)"].notna().any() else None,
     }
 
@@ -376,11 +398,14 @@ if uploaded_files:
 
         if summary is not None:
             summaries.append(summary)
-            log(f"✓ {transport}: {len(summary)} rows")
+            log(f"✓ {transport}: {actual['pkgs']} packages, {len(summary)} dimension/grade groups")
+            for key, label in (("pkgs", "packages"), ("mbf", "MBF"), ("pcs", "pieces")):
+                if expected[key] is not None and actual[key] is not None:
+                    tolerance = 0.001 * actual["pkgs"] + 1e-9 if key == "mbf" else 0
+                    if abs(expected[key] - actual[key]) > tolerance:
+                        log(f"⚠ {label} mismatch: PDF total {expected[key]}, parsed {actual[key]}")
         else:
             log(f"⚠ No data found in {f.name}")
-
-    st.text_area("Log Output", "\n".join(log_lines), height=250)
 
     if summaries:
         combined = pd.concat(summaries, ignore_index=True)
@@ -424,3 +449,4 @@ if uploaded_files:
             file_name=output_name if output_name.strip() else "HSTP_All.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
+    st.text_area("Log Output", "\n".join(log_lines), height=250)
